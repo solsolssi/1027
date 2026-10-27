@@ -1,25 +1,44 @@
 // app.js – 화면 동작 (목록 그리기, 일정 추가)
 
-// 04 단원 : 기본 일정은 data/tasks.json, 화면에서 추가한 일정만 브라우저 저장(wx_added)
-let baseTasks = [];
+// 04 단원 : 일정은 Supabase 표(wx_tasks)에서 읽고 추가도 거기에 저장
+// DB에 연결하지 못하면 data/tasks.json 을 보기 전용으로 보여 줌
 let tasks = [];
 let weatherByRegion = {};   // 03 단원에서 지역별 날씨를 넣음
+let db = null;              // Supabase 연결 (config.js 가 비어 있으면 null)
+let dbOk = false;
 
-// 기본 일정 JSON 읽기 (더블클릭으로 열면 브라우저가 막아서 실패함)
-async function loadBaseTasks() {
-  try {
-    const res = await fetch('data/tasks.json');
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    baseTasks = await res.json();
-  } catch (err) {
-    baseTasks = [];
-    document.getElementById('msgBox').textContent = '기본 일정을 읽지 못했습니다. 배포 주소로 열어 주세요.';
+function showMsg(text) {
+  document.getElementById('msgBox').textContent = text;
+}
+
+function connectDb() {
+  if (SUPABASE_URL && SUPABASE_KEY && window.supabase) {
+    db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
   }
 }
 
-function loadTasks() {
-  const saved = JSON.parse(localStorage.getItem('wx_added') || '[]');
-  tasks = baseTasks.concat(saved);
+// 일정 읽기 : DB → 실패하면 JSON(보기 전용)
+async function loadTasks() {
+  if (db) {
+    const { data, error } = await db.from('wx_tasks')
+      .select('title, region, kind, owner')
+      .order('created_at', { ascending: true });
+    if (!error) {
+      tasks = data;
+      dbOk = true;
+      return;
+    }
+  }
+  dbOk = false;
+  try {
+    const res = await fetch('data/tasks.json');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    tasks = await res.json();
+    showMsg('DB에 연결하지 못했습니다. 기본 일정만 보기 전용으로 보여 줍니다.');
+  } catch (err) {
+    tasks = [];
+    showMsg('DB에 연결하지 못했습니다. 배포 주소로 열어 주세요.');
+  }
 }
 
 function weatherText(w) {
@@ -46,7 +65,7 @@ function renderTasks() {
   }
 }
 
-function addTask(e) {
+async function addTask(e) {
   e.preventDefault();
   const t = {
     title: document.getElementById('titleInput').value.trim(),
@@ -55,11 +74,18 @@ function addTask(e) {
     owner: document.getElementById('ownerInput').value.trim(),
   };
   if (!t.title || !t.owner) return;
-  const saved = JSON.parse(localStorage.getItem('wx_added') || '[]');
-  saved.push(t);
-  localStorage.setItem('wx_added', JSON.stringify(saved));
+  if (!dbOk) {
+    showMsg('DB에 연결되지 않아 일정을 추가할 수 없습니다.');
+    return;
+  }
+  const { error } = await db.from('wx_tasks').insert(t);
+  if (error) {
+    showMsg('추가하지 못했습니다 (' + error.message + ')');
+    return;
+  }
+  showMsg('');
   e.target.reset();
-  loadTasks();
+  await loadTasks();
   renderTasks();
 }
 
@@ -91,8 +117,8 @@ async function loadWeather() {
 
 async function start() {
   showToday();
-  await loadBaseTasks();
-  loadTasks();
+  connectDb();
+  await loadTasks();
   renderTasks();
   loadWeather();
 }
