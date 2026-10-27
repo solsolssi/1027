@@ -67,7 +67,26 @@ function showToday() {
   document.getElementById('todayBox').textContent = d.getFullYear() + '-' + mm + '-' + dd;
 }
 
+// 날씨 불러오기 (실패해도 목록은 그대로 보임)
+async function loadWeather() {
+  const box = document.getElementById('weatherBox');
+  const testMode = new URLSearchParams(location.search).get('test');
+  box.textContent = '날씨 불러오는 중…';
+  try {
+    const res = await fetch(buildWeatherUrl());
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    weatherByRegion = parseWeather(await res.json(), testMode);
+    box.textContent = Object.keys(weatherByRegion)
+      .map(name => name + ' ' + weatherText(weatherByRegion[name]))
+      .join('  |  ') + (testMode === 'wind' ? '  (시험: 풍속 12m/s)' : '');
+    renderTasks();
+  } catch (err) {
+    box.textContent = '날씨를 불러오지 못했습니다 (' + err.message + ')';
+  }
+}
+
 document.getElementById('taskForm').addEventListener('submit', addTask);
 showToday();
 loadTasks();
 renderTasks();
+loadWeather();
