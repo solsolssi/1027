@@ -15,6 +15,7 @@
 - logic.js   : 판단 규칙만 (화면을 다루는 코드 금지)
 - app.js     : 화면 동작 (목록 그리기, 일정 추가)
 - config.js  : Supabase 연결 정보 (주소 · 공개용 키 두 줄만)
+- api/kma.js : 서버 함수 (Vercel, /api/kma?region=) – 판단은 logic.js 를 그대로 씀
 - setup.sql  : Supabase 표(wx_tasks) 만들기 (사람이 SQL Editor 에서 직접 실행)
 - data/tasks.json : 기본 일정 원본 (DB 초기 데이터 · DB 연결 실패 시 보기 전용)
 - PRD.md · CLAUDE.md · README.md : 문서
@@ -32,3 +33,4 @@
 - 구분 · 지역 규칙은 화면뿐 아니라 DB(check 제약)에서도 막는다. 공개용 키로는 읽기 · 추가만 허용한다.
 - 비밀 키는 코드 · 채팅 · GitHub 에 넣지 않는다.
 - config.js 에는 주소 · 공개용(anon/publishable) 키 두 줄만 둔다. service_role(비밀) 키는 어디에도 넣지 않는다.
+- KMA_KEY 등 서버 키는 Vercel 환경변수에만 둔다. 서버 함수 응답 · 화면 · 코드에 키 값을 내보내지 않는다.
