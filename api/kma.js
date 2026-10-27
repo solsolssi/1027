@@ -1,15 +1,31 @@
 // api/kma.js – Vercel 서버 함수 (F-07)
 // GET /api/kma?region=대전 → DB(wx_tasks) 일정 + 기상청 날씨 + 판단
-// 키는 Vercel 환경변수에만 둠 : KMA_KEY, SUPABASE_URL, SUPABASE_KEY(공개용)
+// 서버 키 KMA_KEY 는 Vercel 환경변수에만 둠
+// DB 주소 · 공개용 키는 config.js 를 글자로 읽어 씀 (환경변수에 있으면 그것을 먼저)
 
+const fs = require('fs');
+const path = require('path');
 const { judge, REGIONS, kmaBase, buildKmaUrl, parseKma } = require('../logic.js');
+
+// config.js 에서 값 꺼내기 (실행하지 않고 const 이름 = '값' 만 읽음)
+function readConfig() {
+  const text = fs.readFileSync(path.join(__dirname, '..', 'config.js'), 'utf8');
+  const pick = name => {
+    const m = text.match(new RegExp('const\\s+' + name + "\\s*=\\s*'([^']*)'"));
+    return m ? m[1] : '';
+  };
+  return { url: pick('SUPABASE_URL'), key: pick('SUPABASE_KEY') };
+}
 
 // DB에서 그 지역 일정 읽기 (공개용 키, 읽기만)
 async function readTasks(region) {
-  const url = process.env.SUPABASE_URL + '/rest/v1/wx_tasks'
+  const cfg = readConfig();
+  const base = process.env.SUPABASE_URL || cfg.url;
+  const key = process.env.SUPABASE_KEY || cfg.key;
+  if (!base || !key) throw new Error('config.js 에 SUPABASE_URL · SUPABASE_KEY 가 없습니다');
+  const url = base + '/rest/v1/wx_tasks'
     + '?select=title,region,kind,owner&order=created_at.asc'
     + '&region=eq.' + encodeURIComponent(region);
-  const key = process.env.SUPABASE_KEY;
   const res = await fetch(url, { headers: { apikey: key, Authorization: 'Bearer ' + key } });
   if (!res.ok) throw new Error('DB HTTP ' + res.status);
   return res.json();
