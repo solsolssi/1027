@@ -13,12 +13,12 @@ function judge(kind, w) {
   return { level: 'ok', text: '진행' };
 }
 
-// 지역 좌표 (시청 · 군청 근처 대략값)
+// 지역 좌표 (시청 · 군청 근처 대략값) + 기상청 격자(nx, ny)
 const REGIONS = {
-  '세종': { lat: 36.48, lon: 127.29 },
-  '대전': { lat: 36.35, lon: 127.38 },
-  '태안': { lat: 36.75, lon: 126.30 },
-  '보령': { lat: 36.33, lon: 126.61 },
+  '세종': { lat: 36.48, lon: 127.29, nx: 66, ny: 103 },
+  '대전': { lat: 36.35, lon: 127.38, nx: 67, ny: 100 },
+  '태안': { lat: 36.75, lon: 126.30, nx: 48, ny: 109 },
+  '보령': { lat: 36.33, lon: 126.61, nx: 54, ny: 100 },
 };
 
 // Open-Meteo 주소 만들기 (4개 지역을 한 번에, 오늘 하루 최댓값)
@@ -48,4 +48,46 @@ function parseWeather(json, testMode) {
   return result;
 }
 
-if (typeof module !== 'undefined') module.exports = { RULES, judge, REGIONS, buildWeatherUrl, parseWeather };
+// 기상청 단기예보 발표 시각 (한국 시간 기준)
+// 오늘 02시 발표(02:15 이후 받을 수 있음)를 쓰고, 그 전이면 어제 23시 발표를 씀
+function kmaBase(now) {
+  const kst = new Date(now.getTime() + 9 * 3600 * 1000);
+  const ymd = d => d.toISOString().slice(0, 10).replace(/-/g, '');
+  const today = ymd(kst);
+  if (kst.getUTCHours() * 60 + kst.getUTCMinutes() >= 2 * 60 + 15) {
+    return { today, baseDate: today, baseTime: '0200' };
+  }
+  return { today, baseDate: ymd(new Date(kst.getTime() - 24 * 3600 * 1000)), baseTime: '2300' };
+}
+
+// 기상청 단기예보 주소 만들기 (공공데이터포털, 일반 인증키)
+function buildKmaUrl(region, key, now) {
+  const r = REGIONS[region];
+  const b = kmaBase(now);
+  const serviceKey = key.includes('%') ? key : encodeURIComponent(key);
+  return 'https://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getVilageFcst'
+    + '?serviceKey=' + serviceKey
+    + '&pageNo=1&numOfRows=1000&dataType=JSON'
+    + '&base_date=' + b.baseDate + '&base_time=' + b.baseTime
+    + '&nx=' + r.nx + '&ny=' + r.ny;
+}
+
+// 기상청 응답 해석 → { tempMax, windMax, rainProb } (오늘 자료만)
+// TMX = 최고 기온, WSD = 풍속(시간별 → 최댓값), POP = 강수확률(시간별 → 최댓값)
+function parseKma(json, today, testMode) {
+  const header = json && json.response && json.response.header;
+  if (!header || header.resultCode !== '00') {
+    throw new Error('KMA ' + (header ? header.resultCode + ' ' + header.resultMsg : '응답 형식 오류'));
+  }
+  const items = json.response.body.items.item.filter(it => it.fcstDate === today);
+  const values = cat => items.filter(it => it.category === cat).map(it => Number(it.fcstValue));
+  const tmx = values('TMX'), wsd = values('WSD'), pop = values('POP');
+  if (!tmx.length || !wsd.length || !pop.length) throw new Error('KMA 오늘 자료 없음');
+  return {
+    tempMax: Math.round(Math.max(...tmx)),
+    windMax: testMode === 'wind' ? 12 : Math.max(...wsd),
+    rainProb: Math.max(...pop),
+  };
+}
+
+if (typeof module !== 'undefined') module.exports = { RULES, judge, REGIONS, buildWeatherUrl, parseWeather, kmaBase, buildKmaUrl, parseKma };
